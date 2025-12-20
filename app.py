@@ -1,85 +1,49 @@
-import pickle
-import networkx as nx
-from pyvis.network import Network
+import streamlit as st
+import tempfile
+import os
 
-from src.rag_agent import HealthcareRAGAgent
+from src.query_engine import GraphRAGQueryEngine
 
-GRAPH_PATH = "data/graph/healthcare_graph.pkl"
+st.set_page_config(page_title="Healthcare GraphRAG", layout="wide")
 
+st.title("🩺 Healthcare GraphRAG Agent")
+st.write("Ask healthcare questions and see graph-based reasoning.")
 
-class GraphRAGQueryEngine:
-    def __init__(self):
-        # Load agent (handles vector search + local answer generation)
-        self.agent = HealthcareRAGAgent()
+# Initialize engine ONCE
+engine = GraphRAGQueryEngine()
 
-        # Load knowledge graph
-        with open(GRAPH_PATH, "rb") as f:
-            self.graph = pickle.load(f)
+question = st.text_input(
+    "Ask a healthcare question",
+    placeholder="How does insulin affect complications through blood glucose?"
+)
 
-    #Direct Q&A
-    def direct_qa(self, question: str):
-        return self.agent.run(question)
+if st.button("Ask"):
+    if not question.strip():
+        st.warning("Please enter a question.")
+    else:
+        with st.spinner("Thinking..."):
+            result = engine.answer_with_reasoning(question)
 
-    #Multi-hop reasoning using graph paths
-    def multi_hop_reasoning(self, source: str, target: str):
-        try:
-            path = nx.shortest_path(self.graph, source, target)
-            return path
-        except nx.NetworkXNoPath:
-            return []
+        # ---- Answer ----
+        st.subheader("Answer")
+        st.write(result["answer"])
 
-    #Answer + reasoning path
-    def answer_with_reasoning(self, question: str):
-        if "insulin" in question.lower() and "complication" in question.lower():
-            path = self.multi_hop_reasoning("Insulin", "Complications")
-            answer = self.agent.run(question)
+        # ---- Reasoning Path + Graph ----
+        if result["path"]:
+            st.subheader("Reasoning Path")
+            st.write(" → ".join(result["path"]))
 
-            return {
-                "answer": answer,
-                "path": path
-            }
+            # Create temporary graph file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
+                graph_file = engine.visualize_graph(
+                    highlight_path=result["path"],
+                    output_file=tmp.name
+                )
+
+            st.subheader(" Knowledge Graph")
+            with open(graph_file, "r", encoding="utf-8") as f:
+                st.components.v1.html(f.read(), height=600, scrolling=True)
+
+            os.remove(graph_file)
         else:
-            return {
-                "answer": self.direct_qa(question),
-                "path": []
-            }
-
-    #Graph visualization with PyVis
-    def visualize_graph(self, highlight_path=None, output_file="graph.html"):
-        net = Network(height="600px", width="100%", directed=True)
-
-        # Add nodes
-        for node in self.graph.nodes:
-            net.add_node(node, label=node)
-
-        # Add edges
-        for u, v, data in self.graph.edges(data=True):
-            label = data.get("relationship", "")
-            color = "red" if highlight_path and u in highlight_path and v in highlight_path else "gray"
-            net.add_edge(u, v, label=label, color=color)
-
-        net.write_html(output_file, open_browser=False)
-        return output_file
-
-
-if __name__ == "__main__":
-    engine = GraphRAGQueryEngine()
-
-    #Direct Q&A
-    print(engine.direct_qa("How does insulin work?"))
-
-    print("\n" + "-" * 50 + "\n")
-
-    #Multi-hop reasoning
-    result = engine.answer_with_reasoning(
-        "How does insulin affect complications through blood glucose?"
-    )
-
-    print("Answer:")
-    print(result["answer"])
-
-    print("\nReasoning Path:")
-    print(" → ".join(result["path"]) if result["path"] else "No path found")
-
-    #Graph visualization
-    engine.visualize_graph(highlight_path=result["path"])
+            st.info("No multi-hop reasoning path found for this question.")
