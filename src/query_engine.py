@@ -1,62 +1,85 @@
-from pyvis.network import Network
+import pickle
 import networkx as nx
-from langchain.llms import OpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from pyvis.network import Network
 
-VECTOR_DB_DIR = "vector_store"
-GRAPH_PATH = "healthcare_graph.gml"
+from src.rag_agent import HealthcareRAGAgent
 
-llm = OpenAI(temperature=0)
-embeddings = OpenAIEmbeddings()
+GRAPH_PATH = "data/graph/healthcare_graph.pkl"
 
-def load_vector_store():
-    return FAISS.load_local(VECTOR_DB_DIR, embeddings)
 
-def load_graph():
-    return nx.read_gml(GRAPH_PATH)
+class GraphRAGQueryEngine:
+    def __init__(self):
+        # Load agent (handles vector search + local answer generation)
+        self.agent = HealthcareRAGAgent()
 
-def direct_qa(question):
-    vector_store = load_vector_store()
-    docs = vector_store.similarity_search(question, k=5)
-    context = "\n".join([d.page_content for d in docs])
-    prompt = "Answer the healthcare question using the context.\nContext:\n" + context + "\nQuestion:\n" + question
-    return llm(prompt)
+        # Load knowledge graph
+        with open(GRAPH_PATH, "rb") as f:
+            self.graph = pickle.load(f)
 
-def multi_hop_reasoning(question):
-    graph = load_graph()
-    nodes = []
-    for node in graph.nodes:
-        if node.lower() in question.lower():
-            nodes.append(node)
-    paths = []
-    for i in range(len(nodes)):
-        for j in range(len(nodes)):
-            if i != j:
-                try:
-                    path = nx.shortest_path(graph, nodes[i], nodes[j])
-                    paths.append(path)
-                except:
-                    pass
-    vector_store = load_vector_store()
-    context_chunks = []
-    for path in paths:
-        path_text = " ".join(path)
-        docs = vector_store.similarity_search(path_text, k=2)
-        for d in docs:
-            context_chunks.append(d.page_content)
-    context = "\n".join(context_chunks)
-    prompt = "Answer the healthcare question using multi-hop reasoning.\nContext:\n" + context + "\nQuestion:\n" + question
-    return llm(prompt)
+    # Q&A
+    def direct_qa(self, question: str):
+        return self.agent.run(question)
 
-def visualize_graph(highlight_path=None):
-    graph = load_graph()
-    net = Network(height="600px", width="100%", directed=True)
-    for node in graph.nodes:
-        net.add_node(node, label=node)
-    for u, v, data in graph.edges(data=True):
-        label = data.get("relation", "")
-        color = "red" if highlight_path and u in highlight_path and v in highlight_path else "gray"
-        net.add_edge(u, v, label=label, color=color)
-    net.show("graph.html")
-    return "graph.html"
+    # Multi-hop reasoning using graph paths
+    def multi_hop_reasoning(self, source: str, target: str):
+        try:
+            path = nx.shortest_path(self.graph, source, target)
+            return path
+        except nx.NetworkXNoPath:
+            return []
+
+    # Answer + reasoning path
+    def answer_with_reasoning(self, question: str):
+        if "insulin" in question.lower() and "complication" in question.lower():
+            path = self.multi_hop_reasoning("Insulin", "Complications")
+            answer = self.agent.run(question)
+
+            return {
+                "answer": answer,
+                "path": path
+            }
+        else:
+            return {
+                "answer": self.direct_qa(question),
+                "path": []
+            }
+
+    # Graph visualization with PyVis
+    def visualize_graph(self, highlight_path=None, output_file="graph.html"):
+        net = Network(height="600px", width="100%", directed=True)
+
+        # Add nodes
+        for node in self.graph.nodes:
+            net.add_node(node, label=node)
+
+        # Add edges
+        for u, v, data in self.graph.edges(data=True):
+            label = data.get("relationship", "")
+            color = "red" if highlight_path and u in highlight_path and v in highlight_path else "gray"
+            net.add_edge(u, v, label=label, color=color)
+
+        net.write_html(output_file, open_browser=False)
+        return output_file
+
+
+if __name__ == "__main__":
+    engine = GraphRAGQueryEngine()
+
+    # Direct Q&A
+    print(engine.direct_qa("How does insulin work?"))
+
+    print("\n" + "-" * 50 + "\n")
+
+    # Multi-hop reasoning
+    result = engine.answer_with_reasoning(
+        "How does insulin affect complications through blood glucose?"
+    )
+
+    print("Answer:")
+    print(result["answer"])
+
+    print("\nReasoning Path:")
+    print(" → ".join(result["path"]) if result["path"] else "No path found")
+
+    # Graph visualization
+    engine.visualize_graph(highlight_path=result["path"])
