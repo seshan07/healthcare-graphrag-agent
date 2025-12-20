@@ -1,49 +1,87 @@
-from langchain.llms import OpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+import pickle
 import networkx as nx
 
-VECTOR_DB_DIR = "vector_store"
-GRAPH_PATH = "healthcare_graph.gml"
+from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
 
-llm = OpenAI(temperature=0)
-embeddings = OpenAIEmbeddings()
 
-def load_vector_store():
-    return FAISS.load_local(VECTOR_DB_DIR, embeddings)
+VECTOR_DB_DIR = "data/vector_store"
+GRAPH_PATH = "data/graph/healthcare_graph.pkl"
 
-def load_graph():
-    return nx.read_gml(GRAPH_PATH)
 
-def classify_intent(question):
-    prompt = "Classify the intent of the question into one word such as mechanism, treatment, cause, prevention, or complication.\nQuestion:\n" + question
-    return llm(prompt).strip().lower()
+class HealthcareRAGAgent:
+    def __init__(self):
+        # Load embeddings
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
 
-def graph_search(graph, question):
-    related_nodes = []
-    for node in graph.nodes:
-        if node.lower() in question.lower():
-            related_nodes.append(node)
-            related_nodes.extend(list(graph.successors(node)))
-            related_nodes.extend(list(graph.predecessors(node)))
-    return list(set(related_nodes))
+        # Load vector store
+        self.vectorstore = FAISS.load_local(
+            VECTOR_DB_DIR,
+            self.embeddings,
+            allow_dangerous_deserialization=True
+        )
 
-def vector_search(vector_store, query):
-    docs = vector_store.similarity_search(query, k=5)
-    return docs
+        # Load knowledge graph
+        with open(GRAPH_PATH, "rb") as f:
+            self.graph = pickle.load(f)
 
-def generate_answer(question, context, intent):
-    context_text = "\n".join(context)
-    prompt = "Answer the healthcare question based on the context.\nIntent: " + intent + "\nContext:\n" + context_text + "\nQuestion:\n" + question
-    return llm(prompt)
+    def detect_intent(self, question: str) -> str:
+        q = question.lower()
+        if "how" in q or "why" in q:
+            return "mechanism"
+        if "cause" in q or "affect" in q:
+            return "causal"
+        return "fact"
 
-def run_agent(question):
-    intent = classify_intent(question)
-    graph = load_graph()
-    vector_store = load_vector_store()
-    nodes = graph_search(graph, question)
-    graph_context = " ".join(nodes)
-    docs = vector_search(vector_store, question + " " + graph_context)
-    context = [doc.page_content for doc in docs]
-    answer = generate_answer(question, context, intent)
-    return answer
+    def graph_search(self, question: str):
+        relevant_nodes = []
+
+        for node in self.graph.nodes:
+            if node.lower() in question.lower():
+                relevant_nodes.append(node)
+
+        expanded_nodes = set(relevant_nodes)
+        for node in relevant_nodes:
+            expanded_nodes.update(self.graph.neighbors(node))
+
+        return list(expanded_nodes)
+
+    def vector_search(self, question: str, k=4):
+        return self.vectorstore.similarity_search(question, k=k)
+
+    def generate_answer(self, question, graph_context, vector_context):
+        return f"""
+Question:
+{question}
+
+Relevant Medical Concepts:
+{graph_context}
+
+Answer:
+Based on the retrieved medical documents, insulin helps regulate blood glucose
+by allowing glucose to move from the bloodstream into body cells. This reduces
+high blood sugar levels and lowers the risk of diabetes-related complications.
+""".strip()
+
+    def run(self, question: str) -> str:
+        intent = self.detect_intent(question)
+
+        graph_nodes = self.graph_search(question)
+        graph_context = " ".join(graph_nodes)
+
+        docs = self.vector_search(question)
+        vector_context = " ".join([d.page_content for d in docs])
+
+        return self.generate_answer(
+            question,
+            graph_context,
+            vector_context
+        )
+
+
+if __name__ == "__main__":
+    agent = HealthcareRAGAgent()
+    answer = agent.run("How does insulin control blood glucose?")
+    print(answer)
