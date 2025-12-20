@@ -3,6 +3,6 @@ langchain
 llama-index
 faiss-cpu
 networkx
-streamlit
+streamlit 
 pyvis
 pypdf
