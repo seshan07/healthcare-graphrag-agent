@@ -2,7 +2,7 @@ Healthcare GraphRAG Agent
 
 Problem Statement
 Healthcare information related to chronic diseases like diabetes is scattered across long documents such as guidelines, patient education PDFs, and clinical articles. Traditional keyword search or basic RAG systems struggle with multi-step reasoning, concept relationships, and causal understanding.
-
+ 
 This project solves that problem by combining vector-based retrieval with a healthcare knowledge graph, enabling structured, multi-hop reasoning over medical concepts.
 
 Why Healthcare and Diabetes
