@@ -1,4 +1,4 @@
-Healthcare GraphRAG Agent
+Healthcare GraphRAG Agent 
 
 Problem Statement
 Healthcare information related to chronic diseases like diabetes is scattered across long documents such as guidelines, patient education PDFs, and clinical articles. Traditional keyword search or basic RAG systems struggle with multi-step reasoning, concept relationships, and causal understanding.
