@@ -6,7 +6,6 @@ from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 
-# Paths
 VECTOR_DB_DIR = "data/vector_store"
 GRAPH_PATH = "data/graph/healthcare_graph.pkl"
 
@@ -38,7 +37,6 @@ def extract_entities_and_relations(text):
         if word in text_lower:
             entities.add(word.title())
 
-    # Simple predefined relationships
     if "insulin" in text_lower and "glucose" in text_lower:
         relations.append(("Insulin", "controls", "Blood Glucose"))
 
