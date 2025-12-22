@@ -9,7 +9,6 @@ st.set_page_config(page_title="Healthcare GraphRAG", layout="wide")
 st.title("🩺 Healthcare GraphRAG Agent")
 st.write("Ask healthcare questions and see graph-based reasoning.")
 
-# Initialize engine ONCE
 engine = GraphRAGQueryEngine()
 
 question = st.text_input(
@@ -24,16 +23,13 @@ if st.button("Ask"):
         with st.spinner("Thinking..."):
             result = engine.answer_with_reasoning(question)
 
-        # ---- Answer ----
         st.subheader("Answer")
         st.write(result["answer"])
 
-        # ---- Reasoning Path + Graph ----
         if result["path"]:
             st.subheader("Reasoning Path")
             st.write(" → ".join(result["path"]))
 
-            # Create temporary graph file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
                 graph_file = engine.visualize_graph(
                     highlight_path=result["path"],
