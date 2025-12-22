@@ -11,19 +11,15 @@ GRAPH_PATH = "data/graph/healthcare_graph.pkl"
 
 class HealthcareRAGAgent:
     def __init__(self):
-        # Load embeddings
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
 
-        # Load vector store
         self.vectorstore = FAISS.load_local(
             VECTOR_DB_DIR,
             self.embeddings,
             allow_dangerous_deserialization=True
         )
-
-        # Load knowledge graph
         with open(GRAPH_PATH, "rb") as f:
             self.graph = pickle.load(f)
 
