@@ -33,7 +33,7 @@ def split_documents(documents):
     return
 
 def ingest():
-    documents = load_documents()
+    documents = load_documents() 
 
     if len(documents) == 0:
         print("No documents found. Check data path.")
